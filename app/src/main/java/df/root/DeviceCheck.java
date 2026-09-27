@@ -7,37 +7,41 @@ import android.util.Log;
 import java.io.File;
 
 /**
- * Pre-flight self-check for the DirtyFrag chain.
+ * 设备自检。
  *
- * The exploit patches three fixed paths and loads a KMI-specific kernel module,
- * so a wrong device or firmware fails in confusing ways (or panics the kernel).
- * This runs before anything is touched and refuses to continue when a hard
- * requirement is missing.
+ * 快通道 DirtyFrag 要改写三个固定路径的 page cache、还要加载与 KMI 匹配的内核模块，
+ * 机型 / 固件 / 内核不对会在很莫名的地方失败（甚至把内核搞崩），所以动手之前先把
+ * 机型、固件、内核、KMI 和 6 条必需路径全部列出来，缺硬性条件就直接中止。
  *
- * Added for the SM-S938B (Galaxy S25 Ultra) port. The bundled ksud asset is the
- * Samsung KDP/RKP/DEFEX build for BP4A.251205.006.S938BXXS9CZE1; the profile
- * constants below are only used to warn, never to hard-block, so the same APK
- * still runs on a neighbouring S938B firmware.
+ * CVE-2026-43499 链路的载荷也是按内核匹配的，这里一并提示。
  */
 final class DeviceCheck {
 
     static final String TAG = "dfroot";
 
-    /** Firmware this build's ksud asset was built and validated for. */
+    /** 快通道（DirtyFrag）适配的机型 / 固件 / 内核。 */
     static final String PROFILE_MODEL   = "SM-S938B";
     static final String PROFILE_DEVICE  = "pa3q";
     static final String PROFILE_DISPLAY = "BP4A.251205.006.S938BXXS9CZE1";
     static final String PROFILE_KMI     = "android15-6.6";
     static final String PROFILE_RELEASE = "6.6.98-android15-8-pe17667d-abogkiS938BXXS9CZE1-4k";
 
-    /** Every path the chain opens; a missing one is fatal. */
+    /** 快通道要碰的每一个路径；缺任何一个都是硬性失败。 */
     static final String[] REQUIRED_PATHS = {
-        "/vendor/lib64/libstagefrighthw.so",           // LKM page-cache target (exp.c, libc.S)
-        "/vendor/bin/modprobe",                        // stage1 exec target (libcxx.S, libc.S)
-        "/apex/com.android.runtime/bin/crash_dump64",  // splice helper (exp.c)
-        "/system/lib64/libc.so",                       // __libc_init hook
-        "/system/lib64/libc++.so",                     // ostream sentry hook
-        "/system/bin/logcat",                          // ksud bind-mount target
+        "/vendor/lib64/libstagefrighthw.so",           // 内核模块的落点（exp.c / libc.S）
+        "/vendor/bin/modprobe",                        // stage1 的执行目标（libcxx.S / libc.S）
+        "/apex/com.android.runtime/bin/crash_dump64",  // splice helper（exp.c）
+        "/system/lib64/libc.so",                       // __libc_init 挂钩
+        "/system/lib64/libc++.so",                     // ostream sentry 挂钩
+        "/system/bin/logcat",                          // ksud 的 bind mount 目标
+    };
+
+    /** 之前那套 root 方案可能留下的 su 入口。 */
+    static final String[] SU_PATHS = {
+        "/system/bin/su",
+        "/system/xbin/su",
+        "/sbin/su",
+        "/su/bin/su",
     };
 
     private DeviceCheck() {}
@@ -50,7 +54,7 @@ final class DeviceCheck {
         }
     }
 
-    /** "android15-6.6" derived from uname -r, or "" when unparseable. */
+    /** 从 uname -r 里推出来的 KMI，例如 android15-6.6；识别不了时返回空串。 */
     static String kmi() {
         String r = release();
         int a = r.indexOf("android");
@@ -72,7 +76,7 @@ final class DeviceCheck {
         }
     }
 
-    /** Comma-joined list of required paths that do not exist. */
+    /** 必需路径里缺的那些（逗号分隔）。 */
     static String missingPaths() {
         StringBuilder sb = new StringBuilder();
         for (String p : REQUIRED_PATHS) {
@@ -84,12 +88,12 @@ final class DeviceCheck {
         return sb.toString();
     }
 
-    /** Hard requirements: there is no point running without these. */
+    /** 硬性条件：缺了就没必要动手。 */
     static boolean criticalOk() {
         return missingPaths().isEmpty() && !kmi().isEmpty();
     }
 
-    /** True when this is the exact firmware the bundled ksud was built for. */
+    /** True 表示就是本 fork 适配的那个固件 + 内核组合。 */
     static boolean exactProfile() {
         return PROFILE_MODEL.equals(Build.MODEL) && PROFILE_RELEASE.equals(release());
     }
@@ -105,23 +109,23 @@ final class DeviceCheck {
         sb.append("* 内核    : ").append(rel).append('\n');
         sb.append("* KMI     : ").append(kmi.isEmpty() ? "无法识别" : kmi).append('\n');
         sb.append(missing.isEmpty()
-                ? "* 依赖路径: " + REQUIRED_PATHS.length + " 条全部就位\n"
-                : "* 依赖路径: 缺失 -> " + missing + "\n");
+                ? "* 依赖路径: " + REQUIRED_PATHS.length + " 条全部就位（快通道可用）\n"
+                : "* 依赖路径: 缺失 -> " + missing + "（快通道不可用）\n");
         if (exactProfile()) {
             sb.append("* 适配档位: 精确匹配（").append(PROFILE_DISPLAY).append("）\n");
         } else {
-            sb.append("* 适配档位: 不是已验证的固件（")
-              .append(PROFILE_MODEL).append(" / ").append(PROFILE_RELEASE).append("）\n");
-            sb.append("            仍会继续，但内置 ksud 只针对上面这个组合验证过\n");
+            sb.append("* 适配档位: 不是已验证的组合（").append(PROFILE_MODEL).append(" / ")
+              .append(PROFILE_RELEASE).append("）\n");
+            sb.append("            两条链路的载荷都按内核版本匹配，内核不同可能失败，请谨慎\n");
         }
         if (!PROFILE_KMI.equals(kmi)) {
-            sb.append("* 注意    : 当前内核 KMI 是 ").append(kmi.isEmpty() ? "未知" : kmi)
-              .append("，内置 ksud 只带 ").append(PROFILE_KMI).append('\n');
+            sb.append("* 注意    : 当前 KMI 是 ").append(kmi.isEmpty() ? "未知" : kmi)
+              .append("，本 fork 的两条链路都只针对 ").append(PROFILE_KMI).append(" 构建\n");
         }
         return sb.toString();
     }
 
-    /** Logs the report; returns true when it is safe to start patching. */
+    /** 打印自检报告；返回 true 表示可以动手。 */
     static boolean preflight(String where) {
         Log.i(TAG, "自检（" + where + "）\n" + report());
         if (!criticalOk()) {
@@ -132,15 +136,7 @@ final class DeviceCheck {
         return true;
     }
 
-    /** Paths where an earlier root solution may have left a real `su` binary. */
-    static final String[] SU_PATHS = {
-        "/system/bin/su",
-        "/system/xbin/su",
-        "/sbin/su",
-        "/su/bin/su",
-    };
-
-    /** Non-null when a `su` binary from an earlier root session is still present. */
+    /** 非 null 表示检测到之前留下的 su。 */
     static String existingSu() {
         for (String p : SU_PATHS) {
             File f = new File(p);
@@ -150,18 +146,15 @@ final class DeviceCheck {
     }
 
     /**
-     * Non-null when it is unsafe to run the exploit right now.
+     * 非 null 表示现在不适合跑快通道：
      *
-     *  - the hook is already armed this boot (/dev/df); a second run would
-     *    re-patch pages that are already patched;
-     *  - another root solution is already active. ksud would then skip loading
-     *    its module, stay in the vendor_modprobe domain and fail to finish its
-     *    installation - observed on this device as /system/bin/su being
-     *    truncated to zero bytes, which breaks the existing root.
+     *  - 本轮已经布防过（/dev/df 存在）：再跑一遍是在打已经打过的补丁；
+     *  - 已经有别的 root 在生效：ksud 会跳过加载模块、停在 vendor_modprobe 域，
+     *    "完成安装"会失败，还可能把 /system/bin/su 截成 0 字节（实测踩过）。
      */
     static String blockReason() {
         if (new File("/dev/df").exists()) {
-            return "本轮已运行过（/dev/df 存在），需要硬重启手机后才能再次运行";
+            return "本轮已布防（/dev/df 存在），需要硬重启手机后才能再次运行";
         }
         String su = existingSu();
         if (su != null) {

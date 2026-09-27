@@ -1,73 +1,62 @@
-基于上游 [diabl0w/DFRoot](https://github.com/diabl0w/DFRoot) 的 fork，专门适配
-**三星 Galaxy S25 Ultra（SM-S938B / pa3q）**，界面与运行输出已全部中文化。
+**快通道（DirtyFrag，几秒）+ 手动（CVE-2026-43499，三轮重试）+ 开机自动 + 安装器去广告。**
 
-**开机自动获取 root** —— 利用 DirtyFrag 漏洞（CVE-2026-43284），在 bootloader 锁定的
-三星机型上，每次开机自动重新加载 KernelSU，不用再手动跑一遍一键 root 工具。
+> v1.7：方案里的「慢速」改名「**手动**」，描述改成「**自动不成功再手动尝试**」；
+> 新增「**安装器广告设置**」—— 拿到 root 后自动跑两条 `cmd connectivity` 去掉三星安装器的广告，
+> 命令 / 输出 / 退出码全部打在界面日志里（成功一定有输出），每次开机和每次打开 App 都会补一次。
+>
+> v1.6：**修好了开机自动**（快通道改成直接在开机广播里跑），界面上的方案简化为两项。
 
-## 已验证环境
+基于 [diabl0w/DFRoot](https://github.com/diabl0w/DFRoot) 的 fork，适配
+**三星 Galaxy S25 Ultra（SM-S938B / pa3q）**，界面与运行输出全部中文。
 
-| 项目 | 值 |
-| --- | --- |
-| 机型 | SM-S938B（Galaxy S25 Ultra，pa3q） |
-| 固件 | `BP4A.251205.006.S938BXXS9CZE1` |
-| 内核 | `6.6.98-android15-8-pe17667d-abogkiS938BXXS9CZE1-4k` |
-| KMI | android15-6.6 |
-| 安全补丁 | 2026-05-05 |
+## 这一版做了什么
 
-## 实机验证结果
+- **快通道加回来了**：上游的 DirtyFrag（CVE-2026-43284）链路重新装进 App，
+  抽成 `FastChain`，几秒到几十秒就能出结果；
+- **自动串联**：方案默认「自动」→ 先跑快通道；它没成、而且没留下布防痕迹
+  （`/dev/df` 不存在）时，才自动接手动方案。布防过就停下提示重启，不在脏内核上
+  叠加第二条漏洞；
+- **手动方案**：helper（`libcve43499root.so`）、payload（`cve-2026-43499-app.so`）、
+  ksud（`ksud-s25u-kdp`）是预编译好的（逐字节未改），
+  运行时不需要 Shizuku；
+- **三轮阶梯**：「快（3 分钟）→ 稳（8 分钟）→ 耐心（15 分钟）」，成功即停；
+  每轮都是全新进程（随机性重来），但复用本次开机已探测到的 KASLR 偏移；
+- **开机自动默认打开**：`LOCKED_BOOT_COMPLETED` / `BOOT_COMPLETED` 触发，
+  快通道直接在广播里跑（`goAsync()`），手动链路才交给前台服务，失败会在下次开机自动再试；
+- **方案只有两个**（自动 / 手动）；界面上「上次开机自动：…」直接显示上一次开机跑到哪一步；
+- **安装器广告设置（v1.7 新增）**：拿到 root 后自动执行
+  `cmd connectivity set-chain3-enabled true` 和
+  `cmd connectivity set-package-networking-enabled false com.samsung.android.packageinstaller`，
+  日志里会打出 `→ 成功（exit 0，通道 …）`；第一次会弹 KernelSU 授权，允许一次即可，
+  以后每次开机自动执行。
 
-- DirtyFrag 原语可用，四个补丁全部成功（crash_dump64 / libstagefrighthw.so / libc.so / libc++.so）
-- `dirtyfrag.ko` 加载成功，SELinux 转为 permissive
-- 内嵌 android15-6.6 KernelSU 模块加载成功，**无 panic**，域切换到 `u:r:ksu:s0`
-- 原有 7 个模块的 post-fs-data / service 脚本全部执行
-- KernelSU Manager 显示「**LKM 工作中 [越狱模式]**」
-- **开机自动恢复 root 走通**
+## 使用
 
-## 安装与使用
+1. 先装 KernelSU Manager v3.3.0；
+2. 安装 APK，**先打开一次**（安卓要求应用启动过才会收到开机广播），确认管理器显示「未安装」；
+3. 方案保持「自动」，点按钮，等输出「成功」；
+4. 自动没成功时，切到「**手动**」再点一次（概率型，多试几次命中率明显更高）；
+5. 拿到 root 后会自动跑安装器广告设置 —— 第一次弹 KernelSU 授权时点「允许」，以后每次开机自动执行；
+6. 以后每次开机自动完成。
 
-**前置：先装 KernelSU Manager v3.3.0**
-<https://github.com/tiann/KernelSU/releases/tag/v3.3.0>
+## 注意
 
-```
-1. 安装 APK：adb install -r DFRoot-<版本>.apk
-2. 重启手机，确认 KernelSU Manager 显示「未安装」（必须是未 root 状态）
-3. 打开 DFRoot，确认顶部状态是「状态：可以运行」
-4. 点「一键获取 Root（DirtyFrag CVE-2026-43284）」
-5. 输出出现「成功：ksud 已启动」即成功
-6. 打开「开机自动获取 Root」开关，以后每次重启自动完成
-```
-
-界面顶部就写着这三步，不用记。
+- 两条链路都按内核匹配（快通道要 `android15-6.6` 的内核模块，手动要 6.6.98 的载荷），
+  换固件 / 换内核要换对应的文件；
+- 都是概率型链路：快通道一般一次就成，手动方案会自动重试三轮，三轮不成下次开机会再来；
+- 所有改动只在内存 / page cache 里，不写分区、不改 boot、不动 `packages.xml`，重启即还原
+  （安装器广告那两条是系统运行期设置，卸载 App 不会自动撤销）；
+- `versionCode 9` / `versionName 1.7-s938b-rmg`，签名与前几版相同，可直接覆盖安装。
 
 详细说明见 [README](https://github.com/2253845067/DFRoot/blob/s938b/README.md)，
-适配过程与实测日志见 [PORTING.md](https://github.com/2253845067/DFRoot/blob/s938b/PORTING.md)。
-
-## 注意事项
-
-- 过程中手机会**短暂黑屏/闪一下** —— 那是 ksud 在重启系统框架（soft reboot），属正常现象
-- **不要在已经有 root 的状态下运行**（App 会自动拦住；如果绕过了，会导致 `su` 失效，重启即可恢复）
-- 如果内核的安全补丁已包含 DirtyFrag 修复（上游提交 `f4c50a4034e6`，2026-05-08），本工具会失败，这不是 bug
-- 所有改动只作用于**内存 page cache**，重启即全部还原；不改分区、不写 boot，不会变砖
-- 本 fork **刻意不给 ksud 传 `--allow-shell`**：普通 App 申请 root 正常（走管理器授权弹窗），
-  但 `adb shell` 里直接 `su` 不会提权。需要的话见 README 第六节
-
-## 相对上游的改动
-
-- 新增**设备启动自检**：机型、固件、内核版本、KMI、6 条必需路径，不满足硬性条件直接中止
-- 新增**已 root 保护**：命中时禁用按钮并提示，避免把 `su` 搞坏
-- **界面与运行输出中文化**（含 `exp.c` 的 50 条进度/错误信息），界面内置三步使用流程
-- 固定 `ndkVersion 27.0.12077973`
-- 中文 README 与 PORTING.md 适配记录
-
-**未改动**：漏洞利用逻辑、`dirtyfrag-lkm/`、shellcode（`libc.S` / `libcxx.S`）、ksud 二进制。
+早期版本的实机适配记录见
+[PORTING.md](https://github.com/2253845067/DFRoot/blob/s938b/PORTING.md)。
 
 ---
 
-漏洞利用原理与绝大部分代码来自上游作者
-（[lsposed/lspromise](https://github.com/lsposed/lspromise)、
-[polygraphene/DFReroot](https://github.com/polygraphene/DFReroot)、
-[combeng6th/DirtyInit](https://github.com/combeng6th/DirtyInit)、
-[diabl0w/DFRoot](https://github.com/diabl0w/DFRoot)），详见 README 致谢部分。
+漏洞利用与载荷来自上游作者
+（[diabl0w/DFRoot](https://github.com/diabl0w/DFRoot)、
+[polygraphene/DFReroot](https://github.com/polygraphene/DFReroot)）。
 
 > [!WARNING]
 > 仅用于你本人拥有或已获明确授权的设备。作者不对任何设备损坏负责。

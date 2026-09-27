@@ -49,6 +49,19 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/hintSteps" />
 
+    <TextView
+        android:id="@+id/bootLog"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginTop="4dp"
+        android:textColor="#666666"
+        android:textSize="11sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/statusText" />
+
     <ScrollView
         android:id="@+id/outputScroll"
         android:layout_width="0dp"
@@ -57,7 +70,7 @@
         android:layout_marginEnd="10dp"
         android:layout_marginTop="4dp"
         android:layout_marginBottom="8dp"
-        app:layout_constraintTop_toBottomOf="@+id/statusText"
+        app:layout_constraintTop_toBottomOf="@+id/bootLog"
         app:layout_constraintBottom_toTopOf="@+id/switchBootStart"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
@@ -80,7 +93,39 @@
         android:layout_marginBottom="4dp"
         android:text="@string/switch_boot_start"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintBottom_toTopOf="@+id/btnRun" />
+        app:layout_constraintBottom_toTopOf="@+id/engineGroup" />
+
+    <RadioGroup
+        android:id="@+id/engineGroup"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@+id/btnRun"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/engine_label"
+            android:textSize="12sp" />
+
+        <RadioButton
+            android:id="@+id/engineAuto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/engine_auto"
+            android:textSize="12sp" />
+
+        <RadioButton
+            android:id="@+id/engineManual"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/engine_manual"
+            android:textSize="12sp" />
+    </RadioGroup>
 
     <Button
         android:id="@+id/btnRun"

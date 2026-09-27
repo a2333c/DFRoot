@@ -84,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          APK="app/build/outputs/apk/release/dirtyfrag.apk"
+          APK="$(ls app/build/outputs/apk/release/*.apk | head -1)"
           test -f "${APK}"
           cp "${APK}" "out/DFRoot-${TAG}.apk"
           ( cd out && sha256sum "DFRoot-${TAG}.apk" > "DFRoot-${TAG}.apk.sha256" )

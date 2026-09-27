@@ -5,14 +5,13 @@ plugins {
 android {
     namespace = "df.root"
     compileSdk = 36
-    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "df.root"
         minSdk = 32
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.1.1-s938b"
+        versionCode = 9
+        versionName = "1.7-s938b-rmg"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -40,7 +39,7 @@ android {
 
     applicationVariants.all {
         outputs.all {
-            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = "dirtyfrag.apk"
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = "dfroot.apk"
         }
     }
 
@@ -55,12 +54,6 @@ android {
 
     buildFeatures {
         viewBinding = true
-    }
-
-    externalNativeBuild {
-        cmake {
-            path("src/main/jni/CMakeLists.txt")
-        }
     }
 
     packaging {
