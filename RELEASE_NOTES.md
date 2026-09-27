@@ -48,9 +48,9 @@
   （安装器广告那两条是系统运行期设置，卸载 App 不会自动撤销）；
 - `versionCode 9` / `versionName 1.7-s938b-rmg`，签名与前几版相同，可直接覆盖安装。
 
-详细说明见 [README](https://github.com/2253845067/DFRoot/blob/s938b/README.md)，
+详细说明见 [README.md](README.md)，
 早期版本的实机适配记录见
-[PORTING.md](https://github.com/2253845067/DFRoot/blob/s938b/PORTING.md)。
+[PORTING.md](PORTING.md)。
 
 ---
 
