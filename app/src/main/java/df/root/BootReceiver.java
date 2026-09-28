@@ -69,9 +69,21 @@ public class BootReceiver extends BroadcastReceiver {
                 } finally {
                     postRootPending.finish();
                 }
-                RmgService.post(context, "DFRoot", ok
-                        ? "开机自动：安装界面广告设置已生效（安装器广告已去掉）"
-                        : "开机自动：安装界面广告设置没成功，打开 DFRoot 可重试");
+                if (ok) {
+                    RmgService.post(context, "DFRoot",
+                            "开机自动：安装界面广告设置已生效（安装器广告已去掉）");
+                    return;
+                }
+                // 开机这一刻 KernelSU 的 su 往往还没就绪（管理器没起来、授权弹窗弹不出来），
+                // 一次失败很正常。交给前台服务在接下来几分钟里反复重试 —— 成功一次就收工，
+                // 而且成功那次会把 KernelSU 的开机脚本装上，以后每次开机都不用应用插手。
+                if (PostRoot.readyForRetry(context)
+                        && RmgService.startPostRoot(context, "开机自动")) {
+                    BootLog.record(context, where, "安装界面广告设置没成，交给前台服务重试");
+                    return;
+                }
+                RmgService.post(context, "DFRoot",
+                        "开机自动：安装界面广告设置没成功，打开 DFRoot 可重试");
             }, "dfroot-postroot-boot").start();
             return;
         }

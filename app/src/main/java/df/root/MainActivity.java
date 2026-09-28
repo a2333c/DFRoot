@@ -254,8 +254,11 @@ public class MainActivity extends AppCompatActivity implements Sink {
     /** 界面上那一行「上次开机自动：…」，出问题时一眼就能看出广播有没有到。 */
     private void refreshBootLog() {
         String last = BootLog.summary(this);
+        String script = BootScript.summary(this);
         binding.bootLog.setText(getString(R.string.boot_log_label)
-                + (last == null ? getString(R.string.boot_log_none) : last));
+                + (last == null ? getString(R.string.boot_log_none) : last)
+                + "\n" + getString(R.string.boot_script_label)
+                + (script == null ? getString(R.string.boot_script_none) : script));
     }
 
     private void requestNotificationPermission() {

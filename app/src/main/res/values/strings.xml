@@ -10,10 +10,12 @@
     <string name="btn_run_blocked">暂不可运行（见上方状态）</string>
     <string name="engine_label">Root 方案</string>
     <string name="engine_auto">自动（推荐：先跑快通道，不成功再手动尝试）</string>
-    <string name="engine_manual">手动：CVE-2026-43499（Root My Galaxy，三轮重试）</string>
+    <string name="engine_manual">手动：CVE-2026-43499（三轮重试）</string>
     <string name="boot_log_label">上次开机自动：</string>
     <string name="boot_log_none">还没有记录（开机广播没收到）</string>
-    <string name="hint_steps">使用步骤（必须在未 root 状态下运行）\n① 装好后先打开一次本应用（安卓要求），重启手机，确认 KernelSU 管理器显示「未安装」\n② 方案保持「自动」即可，点下面的按钮：先跑快通道 DirtyFrag（几秒），不成功再自动接 CVE-2026-43499（最多三轮）\n③ 自动没成功时，切到「手动」再点一次：只跑 CVE-2026-43499 那条，概率型的，多试几次命中率明显更高\n④ 「开机自动获取 Root」默认已打开：每次重启，系统广播一到就直接跑快通道，不成再接着跑 CVE-2026-43499\n⑤ 拿到 root 后会自动执行两条系统设置（去掉三星安装器的广告）：第一次会弹 KernelSU 授权，允许一次即可，以后每次开机自动执行\n⑥ 手机管家/电池里把本应用设为「不受限制」并允许「自启动」，否则系统可能不把开机广播发给它</string>
+    <string name="boot_script_label">开机脚本：</string>
+    <string name="boot_script_none">还没有记录（打开一次本应用就会装上，之后每次开机自动执行）</string>
+    <string name="hint_steps">使用步骤（必须在未 root 状态下运行）\n① 装好后先打开一次本应用（安卓要求），重启手机，确认 KernelSU 管理器显示「未安装」\n② 方案保持「自动」即可，点下面的按钮：先跑快通道 DirtyFrag（几秒），不成功再自动接 CVE-2026-43499（最多三轮）\n③ 自动没成功时，切到「手动」再点一次：只跑 CVE-2026-43499 那条，概率型的，多试几次命中率明显更高\n④ 「开机自动获取 Root」默认已打开：每次重启，系统广播一到就直接跑快通道，不成再接着跑 CVE-2026-43499；拿到 root 后不会再额外重启一次\n⑤ 拿到 root 后会自动执行两条系统设置（去掉三星安装器的广告），并写成 KernelSU 的开机脚本（/data/adb/service.d/）：以后每次开机由 KernelSU 以 root 直接执行，不用打开应用、也不用授权弹窗\n⑥ 手机管家/电池里把本应用设为「不受限制」并允许「自启动」，否则系统可能不把开机广播发给它</string>
     <string name="status_ready">状态：可以运行</string>
     <string name="status_done">状态：本轮已获取 Root（重启后会自动再来一次）</string>
 </resources>

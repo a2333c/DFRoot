@@ -7,6 +7,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.File;
@@ -26,6 +27,11 @@ public class RmgService extends Service implements Sink {
     private static final String CHANNEL_ID = "dfroot-root";
     private static final int NOTIFICATION_ID = 0x52;
     private static final String EXTRA_SOURCE = "source";
+    private static final String EXTRA_POSTROOT = "postroot";
+
+    /** 补设置：最多盯这么久，每隔 POST_ROOT_GAP_MILLIS 试一次。 */
+    private static final long POST_ROOT_WINDOW_MILLIS = 5 * 60_000L;
+    private static final long POST_ROOT_GAP_MILLIS = 30_000L;
 
     private volatile Thread worker;
 
@@ -55,6 +61,26 @@ public class RmgService extends Service implements Sink {
         }
     }
 
+    /**
+     * 起前台服务反复补「安装界面广告设置」。
+     *
+     * 开机那一刻 KernelSU 的 su 常常还没就绪（管理器没起来、授权弹窗弹不出来），一次失败
+     * 很正常；这个服务在接下来几分钟里每 30 秒试一次，成功一次就收工。成功那次会把
+     * KernelSU 的开机脚本装上，以后每次开机就不再需要应用插手了。
+     */
+    static boolean startPostRoot(Context context, String source) {
+        Intent intent = new Intent(context, RmgService.class);
+        intent.putExtra(EXTRA_SOURCE, source);
+        intent.putExtra(EXTRA_POSTROOT, true);
+        try {
+            context.startForegroundService(intent);
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "起前台服务被系统拒绝（补设置）", t);
+            return false;
+        }
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return null;
@@ -68,8 +94,10 @@ public class RmgService extends Service implements Sink {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        boolean postRoot = intent != null && intent.getBooleanExtra(EXTRA_POSTROOT, false);
         try {
-            startForeground(NOTIFICATION_ID, buildNotification("正在获取 Root…"));
+            startForeground(NOTIFICATION_ID, buildNotification(
+                    postRoot ? "正在设置安装界面广告…" : "正在获取 Root…"));
         } catch (Throwable t) {
             Log.e(TAG, "前台服务启动失败", t);
             BootLog.record(this, "前台服务", "startForeground 失败：" + t);
@@ -80,7 +108,8 @@ public class RmgService extends Service implements Sink {
         String source = intent == null ? null : intent.getStringExtra(EXTRA_SOURCE);
         final String label = source == null ? "手动运行" : source;
         busy = true;
-        Thread thread = new Thread(() -> runChain(label), "dfroot-root");
+        Thread thread = new Thread(postRoot ? () -> runPostRootRetry(label) : () -> runChain(label),
+                postRoot ? "dfroot-postroot" : "dfroot-root");
         worker = thread;
         thread.start();
         return START_NOT_STICKY;
@@ -102,6 +131,60 @@ public class RmgService extends Service implements Sink {
         if (status == null || status.isEmpty()) return;
         Log.i(TAG, status);
         notify(status);
+    }
+
+    /**
+     * 反复补「安装界面广告设置」，直到成功或者超时。
+     *
+     * 只在「已经有 root 而且用户已经解锁」时才动手：未解锁时 KernelSU 的授权弹窗弹不出来，
+     * 跑了也是白跑。
+     */
+    private void runPostRootRetry(String source) {
+        long deadline = SystemClock.elapsedRealtime() + POST_ROOT_WINDOW_MILLIS;
+        try {
+            int attempt = 0;
+            while (true) {
+                if (PostRoot.appliedThisBoot(this)) {
+                    Log.i(TAG, source + "：安装界面广告设置已经生效，收工");
+                    BootLog.record(this, source, "安装界面广告设置已生效");
+                    notify("安装界面广告设置已生效");
+                    return;
+                }
+                if (!PostRoot.readyForRetry(this)) {
+                    Log.w(TAG, source + "：root 或解锁状态还没就绪，停止补设置");
+                    BootLog.record(this, source, "补设置：还没解锁或还没 root，停止重试");
+                    notify("安装界面广告设置没成功，打开 DFRoot 可重试");
+                    return;
+                }
+                attempt++;
+                notify("正在设置安装界面广告（第 " + attempt + " 次）…");
+                if (PostRoot.apply(this, this)) {
+                    Log.i(TAG, source + "：安装界面广告设置已生效（第 " + attempt + " 次）");
+                    BootLog.record(this, source,
+                            "安装界面广告设置已生效（第 " + attempt + " 次）");
+                    notify("安装界面广告设置已生效");
+                    return;
+                }
+                if (SystemClock.elapsedRealtime() + POST_ROOT_GAP_MILLIS >= deadline) {
+                    Log.w(TAG, source + "：安装界面广告设置补了 " + attempt + " 次都没成功");
+                    BootLog.record(this, source,
+                            "补设置重试 " + attempt + " 次仍未成功（打开应用可再试）");
+                    notify("安装界面广告设置没成功，打开 DFRoot 可重试");
+                    return;
+                }
+                try {
+                    Thread.sleep(POST_ROOT_GAP_MILLIS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        } finally {
+            busy = false;
+            worker = null;
+            stopForeground(STOP_FOREGROUND_DETACH);
+            stopSelf();
+        }
     }
 
     private void runChain(String source) {

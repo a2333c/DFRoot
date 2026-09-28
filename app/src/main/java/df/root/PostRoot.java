@@ -34,6 +34,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * 本轮开机成功执行过就跳过（用 boot_id 记）；没成功（还没解锁、没授权、还没 root）
  * 就留着，等「开机完成」广播或下次打开应用时再补一次。
+ *
+ * v1.8：只靠应用在开机那一刻去跑并不可靠 —— 那时 KernelSU 的 su 还没就绪（管理器没起来、
+ * 授权弹窗弹不出来），实机上每次开机都失败，必须手动打开 KernelSU 再打开应用才行。
+ * 所以现在每次真正跑成功之后，顺手把同样的两条命令写成 KernelSU 的开机脚本
+ * （/data/adb/service.d/，见 BootScript），以后每次开机由 KernelSU 自己以 root 执行，
+ * 应用在不在、有没有授权都无所谓。
  */
 final class PostRoot {
 
@@ -95,6 +101,10 @@ final class PostRoot {
         }
 
         sink.log("\n=== 安装界面广告设置（去掉三星安装器的广告）===\n");
+        String installError = BootScript.install(ctx, channels(ctx), sink);
+        if (installError != null) {
+            sink.log("* 开机脚本：这次没装上（" + installError + "）—— 先直接执行，下次再补\n");
+        }
         boolean allOk = true;
         for (String command : COMMANDS) {
             sink.log("$ " + command + "\n");
@@ -114,12 +124,15 @@ final class PostRoot {
         return allOk;
     }
 
-    /** 本轮开机已经成功设置过。 */
+    /** 本轮开机已经成功设置过：应用自己跑成功过，或者 KernelSU 的开机脚本已经跑成功过。 */
     static boolean appliedThisBoot(Context ctx) {
         String boot = RmgChain.bootId();
         if (boot == null) return false;
         SharedPreferences prefs = prefs(ctx);
-        return boot.equals(prefs.getString(KEY_BOOT, null)) && prefs.getBoolean(KEY_DONE, false);
+        if (boot.equals(prefs.getString(KEY_BOOT, null)) && prefs.getBoolean(KEY_DONE, false)) {
+            return true;
+        }
+        return BootScript.ranThisBoot(ctx);
     }
 
     /**
@@ -131,6 +144,16 @@ final class PostRoot {
     static boolean rootPresent(Context ctx) {
         return RmgChain.installedThisBoot(ctx)
                 || DeviceCheck.existingSu() != null;
+    }
+
+    /**
+     * 现在能不能去补设置：已经有 root，而且用户已经解锁。
+     *
+     * 开机广播有两次机会（未解锁那次、解锁那次），但「未解锁」时 KernelSU 的授权弹窗
+     * 根本弹不出来，跑也是白跑 —— 补设置的重试要等这个条件成立再开始。
+     */
+    static boolean readyForRetry(Context ctx) {
+        return rootPresent(ctx) && unlocked(ctx);
     }
 
     // ---------------------------------------------------------------- 内部
@@ -166,7 +189,7 @@ final class PostRoot {
     }
 
     /** 通道顺序：手动方案刚跑完就先用 helper（不用授权），否则用 KernelSU 的 su。 */
-    private static List<Channel> channels(Context ctx) {
+    static List<Channel> channels(Context ctx) {
         List<Channel> list = new ArrayList<>();
         if (RmgChain.helperRootThisBoot(ctx)) {
             File helper = RmgChain.helper(ctx);
@@ -242,7 +265,7 @@ final class PostRoot {
     }
 
     /** 一条 root 通道：prefix + 命令 拼成完整 argv。 */
-    private static final class Channel {
+    static final class Channel {
         final String name;
         final String[] prefix;
 
@@ -258,7 +281,7 @@ final class PostRoot {
         }
     }
 
-    private static final class Result {
+    static final class Result {
         final boolean ok;
         final int code;
         final String output;

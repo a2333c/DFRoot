@@ -78,8 +78,12 @@ final class FastChain {
             sink.log("开始执行漏洞利用（快通道，通常几秒到几十秒）……\n");
 
             int icvLen = 128 / 8;
+            // 最后一个参数是 skipSoftReboot：true = 不给 ksud 传 --soft-reboot。
+            // v1.8 起固定传 true：带 --soft-reboot 时 ksud 装完会重启一次系统框架，
+            // 用户看到的就是「开机之后又自己重启了一次」；更糟的是这次重启会把应用进程
+            // 连同它正在跑的「安装界面广告设置」一起打断 —— 那两条命令就是这么丢的。
             int rc = MainActivity.nativeRunAll(sink, encapPort, spiVal, aesKey, hmacKey, icvLen,
-                    senderPort, ksud.getAbsolutePath(), false);
+                    senderPort, ksud.getAbsolutePath(), true);
 
             transform.close();
             spiObj.close();
