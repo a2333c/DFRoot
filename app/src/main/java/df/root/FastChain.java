@@ -73,8 +73,12 @@ final class FastChain {
                     .setIpv4Encapsulation(encapSock, senderPort)
                     .buildTransportModeTransform(loopback, spiObj);
 
-            File ksud = stageKsud(context);
-            sink.log("ksud 已暂存到: " + ksud.getAbsolutePath() + "\n");
+            File ksud = KsudChannel.binary(context);
+            if (!ksud.isFile()) {
+                sink.log("\n自检未通过：找不到 " + ksud.getAbsolutePath() + " —— 已中止。\n");
+                return Result.FAILED_CLEAN;
+            }
+            sink.log("ksud: " + ksud.getAbsolutePath() + "\n");
             sink.log("开始执行漏洞利用（快通道，通常几秒到几十秒）……\n");
 
             int icvLen = 128 / 8;
@@ -105,28 +109,5 @@ final class FastChain {
             sink.log("\n快通道发生异常: " + e + "\n");
             return new File("/dev/df").exists() ? Result.FAILED_ARMED : Result.FAILED_CLEAN;
         }
-    }
-
-    /**
-     * 把 assets/ksud（上游 DFRoot 自带的那个）落到应用私有目录并置为可执行。
-     *
-     * 一律用设备加密存储（DE）：开机自动是在 LOCKED_BOOT_COMPLETED 触发的，
-     * 那时用户还没解锁，凭据加密存储（CE）不可用，用 CE 会直接抛异常。
-     */
-    private static File stageKsud(Context context) throws Exception {
-        Context de = context.createDeviceProtectedStorageContext();
-        File dest = new File(de.getFilesDir(), "ksud");
-        File tmp = new File(dest.getPath() + ".tmp");
-        try (java.io.InputStream in = de.getAssets().open("ksud");
-             java.io.OutputStream out = new java.io.FileOutputStream(tmp)) {
-            byte[] buf = new byte[8192];
-            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-        }
-        if (!tmp.renameTo(dest)) {
-            tmp.delete();
-            throw new java.io.IOException("暂存 ksud 失败：" + dest);
-        }
-        dest.setExecutable(true, false);
-        return dest;
     }
 }

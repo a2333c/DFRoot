@@ -36,13 +36,27 @@ final class DeviceCheck {
         "/system/bin/logcat",                          // ksud 的 bind mount 目标
     };
 
-    /** 之前那套 root 方案可能留下的 su 入口。 */
+    /**
+     * su 可能出现的路径。
+     *
+     * 前四个是传统位置（KernelSU / Magisk 把 su 挂到 /system/bin/su）；
+     * 后面几个是各变体自己放 su 的目录 —— 实机上就出现过「/system/bin/su 不存在、
+     * 只有别处有」的情况，所以多列几个，找不到还有 ksud 通道兜着。
+     */
     static final String[] SU_PATHS = {
         "/system/bin/su",
         "/system/xbin/su",
         "/sbin/su",
         "/su/bin/su",
+        "/debug_ramdisk/su",
+        "/data/adb/ksu/bin/su",
+        "/data/adb/magisk/su",
+        "/data/adb/ap/bin/su",
     };
+
+    /** 执行 root 命令时额外塞进 PATH 的目录（有的变体只在这些目录里放 su）。 */
+    static final String EXTRA_PATH = "/data/adb/ksu/bin:/debug_ramdisk:/data/adb/magisk"
+            + ":/data/adb/ap/bin:/system/bin:/system/xbin";
 
     private DeviceCheck() {}
 

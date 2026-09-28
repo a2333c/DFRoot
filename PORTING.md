@@ -4,6 +4,16 @@
 
 ---
 
+> **2026-09-28 更新（v1.9）**：v1.9 修掉 v1.8 引出来的一个坑 —— 去掉 `--soft-reboot` 之后，
+> 本轮开机 `/system/bin/su` 不会出现（KernelSU 的 su 由内核模块在 post-fs-data 阶段挂出，
+> ksud late-load 不跑那个阶段），实机日志就是
+> `java.io.IOException: Cannot run program "su": error=2, No such file or directory`。
+> 现在新增第三条通道 `KsudChannel`：把 ksud 作为 `jniLibs/arm64-v8a/libksud.so` 打进 APK
+> （nativeLibraryDir 里的文件 App 可以直接 execve），用 `libksud.so debug su` 开 root shell
+> （提权走 `ioctl(KSU_IOCTL_GRANT_ROOT)`），不依赖 `/system/bin/su`、不用授权弹窗、
+> 也不用重启系统框架；通道顺序 helper → ksud → su，一次没成自动重试 4 次 × 15 秒，
+> 日志里加了一行通道自检 `* root 通道：helper=…，ksud=可用，su=…`。
+>
 > **2026-09-27 更新（v1.8）**：v1.8 修掉两个开机自动的老毛病 ——
 > ① 开机后不再额外重启一次：`FastChain` 固定不给 ksud 传 `--soft-reboot`
 > （本文第 7 节记录的「设备短暂掉线、ksud 重启框架」就是它，现在没有了）；

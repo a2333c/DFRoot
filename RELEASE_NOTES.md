@@ -1,5 +1,13 @@
 **快通道（DirtyFrag，几秒）+ 手动（CVE-2026-43499，三轮重试）+ 开机自动 + 安装器去广告。**
 
+> v1.9：**修掉「`Cannot run program "su": error=2, No such file or directory`」** ——
+> v1.8 去掉 `--soft-reboot` 之后，本轮开机 `/system/bin/su` 永远不会出现（KernelSU 的 `su`
+> 是内核模块在 post-fs-data 阶段才挂出来的，而 ksud late-load 不跑那个阶段），应用里
+> `su -c …` 必然失败。v1.9 改用 **APK 自带的 ksud** 当 root 通道（`libksud.so debug su`，
+> 提权走内核 `ioctl(KSU_IOCTL_GRANT_ROOT)`）—— 不依赖 `/system/bin/su`、不用授权弹窗、
+> 也不用重启系统框架；通道顺序 helper → ksud → su，一次没成自动重试 4 次 × 15 秒，
+> 日志里还会先打一行通道自检。
+>
 > v1.8：**修掉两个开机自动的老毛病** ——
 > ① 开机后不会再额外重启一次（不再给 ksud 传 `--soft-reboot`，以前这个参数会让 ksud
 > 装完重启一次系统框架，还会把正在跑的广告设置一起打断）；
@@ -40,7 +48,12 @@
   `/data/adb/service.d/dfroot-ads.sh`，KernelSU 每次开机以 root 直接执行它 ——
   不用打开应用、不用 `su`、也不会弹授权；界面上「开机脚本：…」显示上一次执行结果；
 - **不再额外重启一次（v1.8 修复）**：`FastChain` 固定不给 ksud 传 `--soft-reboot`；
-- **补设置重试（v1.8 新增）**：开机那一刻一次没成就交给前台服务，每 30 秒重试，最多 5 分钟。
+- **补设置重试（v1.8 新增）**：开机那一刻一次没成就交给前台服务，每 30 秒重试，最多 5 分钟；
+- **ksud 通道（v1.9 新增）**：广告设置优先用 APK 自带的 ksud（`libksud.so debug su`）提权，
+  不依赖 `/system/bin/su`、不用授权弹窗；失败日志里的
+  `Cannot run program "su": error=2, No such file or directory` 不会再出现；
+- **通道自检 + 自动重试（v1.9 新增）**：先打一行 `* root 通道：helper=…，ksud=…，su=…`，
+  一次没成自动重试 4 次 × 15 秒（约 45 秒）。
 
 ## 使用
 
@@ -59,7 +72,7 @@
 - 都是概率型链路：快通道一般一次就成，手动方案会自动重试三轮，三轮不成下次开机会再来；
 - 所有改动只在内存 / page cache 里，不写分区、不改 boot、不动 `packages.xml`，重启即还原
   （安装器广告那两条是系统运行期设置，卸载 App 不会自动撤销）；
-- `versionCode 10` / `versionName 1.8-s938b-rmg`，签名与前几版相同，可直接覆盖安装。
+- `versionCode 11` / `versionName 1.9-s938b-rmg`，签名与前几版相同，可直接覆盖安装。
 
 详细说明见 [README.md](README.md)，
 早期版本的实机适配记录见

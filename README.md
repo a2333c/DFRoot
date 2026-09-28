@@ -20,6 +20,25 @@
 v1.8 起这两条命令会被写成 **KernelSU 的开机脚本**，以后每次开机由 KernelSU 自己以 root
 执行，不用打开应用、也不用授权弹窗。
 
+## v1.9 改了什么
+
+* **修掉 `Cannot run program "su": error=2, No such file or directory`**：
+  v1.8 为了不再额外重启一次，去掉了给 ksud 的 `--soft-reboot`；而 KernelSU 的 `su` 恰恰是
+  内核模块在 **post-fs-data 阶段**才挂到 `/system/bin/su` 上的，ksud 的 late-load 只跑
+  `late-load / post-mount / service / boot-completed` 这几个阶段（KernelSU 源码
+  `userspace/ksud/src/late_load.rs`）—— 不重启框架，本轮开机这个挂载点就永远不出现，
+  应用里 `su -c …` 必定 `error=2`。**这两个问题是同一个根因**；
+* **新增第三条 root 通道：应用自带的 ksud**（`KsudChannel`）—— APK 里多带一份 ksud
+  （`libksud.so`，放在 `jniLibs/arm64-v8a/`，装进 nativeLibraryDir，App 可以直接 execve），
+  用 `libksud.so debug su` 开一个 root shell，命令写进它的 stdin。提权走内核的
+  `ioctl(KSU_IOCTL_GRANT_ROOT)`，**不依赖 `/system/bin/su`、不用授权弹窗、也不用重启系统框架**；
+* **通道顺序**：helper（手动方案刚跑完时）→ ksud → su。日志里先打一行自检
+  `* root 通道：helper=…，ksud=可用，su=…`，卡在哪一眼可见；
+* **补设置改成 4 次 × 15 秒**（约 45 秒）：快通道刚返回成功那一刻 ksud 才被拉起来，
+  头几次扑空很正常，现在会自动再试；
+* 跑 `su` 之前把 `/data/adb/ksu/bin`、`/debug_ramdisk`、`/data/adb/magisk`、`/data/adb/ap/bin`
+  塞进 `PATH`，`SU_PATHS` 也扩到 8 条（有的 KernelSU 变体只在这些目录里放 `su`）。
+
 ## v1.8 改了什么
 
 * **开机后不再额外重启一次**：不再给 ksud 传 `--soft-reboot`。以前这个参数会让 ksud 装完
@@ -82,7 +101,7 @@ v1.8 起这两条命令会被写成 **KernelSU 的开机脚本**，以后每次�
 
 ---
 
-## 二、自动模式怎么串（v1.5 加链路，v1.6 修开机自动，v1.7 加安装器广告设置，v1.8 修开机重启与广告设置）
+## 二、自动模式怎么串（v1.5 加链路，v1.6 修开机自动，v1.7 加安装器广告设置，v1.8 修开机重启与广告设置，v1.9 修「su 不存在」）
 
 ```
 手动点按钮（界面上）
@@ -230,8 +249,12 @@ cmd connectivity set-package-networking-enabled false com.samsung.android.packag
 * 输出直接打在界面日志里：每条先打一行 `$ 命令`，接着是命令自己的输出，
   最后一行是 `→ 成功（exit 0，通道 …）` 这样的判定 —— **成功一定有输出**，
   没输出就是没跑成（日志里会写明原因）；
-* 走哪条 root 通道是自动挑的：手动方案刚跑完时用 helper（自带 root，不用授权），
-  其它情况用 KernelSU 的 `su`；
+* 走哪条 root 通道是自动挑的（v1.9）：**手动方案刚跑完时用 helper**（自带 root，不用授权）
+  → **其次用应用自带的 ksud**（`libksud.so debug su`，不依赖 `/system/bin/su`、
+  不用授权弹窗）→ 最后才轮到 KernelSU 的 `su`；日志里会先打一行
+  `* root 通道：helper=…，ksud=可用，su=…`；
+* 一次没成会自动重试 **4 次 × 15 秒**（v1.9）：快通道刚成功那一刻 ksud 才刚被拉起来，
+  头几次扑空很正常；
 * **第一次成功之后，同样的两条命令会被写成 KernelSU 的开机脚本**
   `/data/adb/service.d/dfroot-ads.sh`：以后每次开机由 KernelSU 以 root 直接执行它，
   不用打开应用、不用 `su`、也不会弹授权；
@@ -302,6 +325,18 @@ KernelSU 是 late-load 进内存的，bootloader 锁定的机器没法把它写�
 开机那一刻 KernelSU 的 `su` 还没就绪（管理器没起来，授权弹窗也弹不出来），应用自己去跑
 必定失败。v1.8 把那两条命令改成 KernelSU 的开机脚本（`/data/adb/service.d/`），
 由 KernelSU 自己以 root 执行，跟应用和授权都无关 —— 开机必定执行。
+v1.9 又补了一层兜底：即使开机脚本这一次没装上，应用也会用自带的 ksud 通道直接把这两条跑掉
+（不依赖 `su`），所以 v1.8 实机日志里那种「两条都 `error=2` 全灭」不会再出现。
+
+**Q：日志里的 `Cannot run program "su": error=2, No such file or directory` 是什么？**
+那是 v1.8 的毛病，v1.9 已经修掉。KernelSU 的 `su` 是内核模块在 **post-fs-data 阶段**才挂到
+`/system/bin/su` 上的，而 ksud 的 late-load 只跑
+`late-load / post-mount / service / boot-completed`（KernelSU 源码
+`userspace/ksud/src/late_load.rs`）—— v1.8 不再给 ksud 传 `--soft-reboot` 之后，
+本轮开机这个挂载点根本不会出现，应用里 `su -c …` 必然 `error=2`。
+v1.9 改成直接用 APK 自带的 ksud（`libksud.so debug su`）提权：它走内核的
+`ioctl(KSU_IOCTL_GRANT_ROOT)`，跟那个挂载点无关，也不用授权弹窗。
+现在日志里应该是 `→ 成功（exit 0，通道 ksud(debug su)）`。
 
 **Q：开了「开机自动获取 Root」，重启后却什么都没发生？**
 先看界面上那行「上次开机自动：…」：
@@ -340,11 +375,13 @@ KernelSU 是 late-load 进内存的，bootloader 锁定的机器没法把它写�
 | **安装器广告设置** | v1.7 新增：`PostRoot` —— 拿到 root 后自动跑两条 `cmd connectivity`（去三星安装器广告），命令 / 输出 / 退出码全部进日志 |
 | **开机脚本通道** | v1.8 新增：`BootScript` —— 成功之后把那两条命令写成 `/data/adb/service.d/dfroot-ads.sh`，KernelSU 每次开机以 root 执行，不依赖应用和授权弹窗 |
 | **不再软重启** | v1.8 修复：`FastChain` 固定不给 ksud 传 `--soft-reboot`（开机后不会再额外重启一次） |
+| **ksud 通道** | v1.9 新增：`KsudChannel` —— 用 APK 自带的 ksud（`libksud.so debug su`）开 root shell 跑广告设置，不依赖 `/system/bin/su`、不用授权弹窗、也不用重启框架 |
+| **通道自检 + 重试** | v1.9 新增：`PostRoot.diagnose()` 先打一行通道自检；`applyWithRetry()` 4 次 × 15 秒 |
 | **补设置重试** | v1.8 新增：`RmgService` 的补设置模式，开机后每 30 秒重试一次，最多 5 分钟 |
 | 开机自动默认打开 | `BootReceiver` 监听 `LOCKED_BOOT_COMPLETED` + `BOOT_COMPLETED`，`directBootAware` |
 | 开机诊断 | `BootLog`：每一步写一笔（DE 存储），界面上显示「上次开机自动：…」 |
 | 凭据 / 缓存 | 用 `boot_id` 记"本轮已装好"；缓存本次开机的 KASLR 偏移 |
-| 构建 | `versionCode 10` / `versionName 1.8-s938b-rmg` |
+| 构建 | `versionCode 11` / `versionName 1.9-s938b-rmg` |
 
 历史版本（v1.1 / v1.1.1 的 DirtyFrag 适配过程与实机日志）见 [PORTING.md](PORTING.md)。
 
